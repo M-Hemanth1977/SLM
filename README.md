@@ -51,7 +51,7 @@ The pipeline focuses on reading, preprocessing, embedding, retrieving, and gener
 
 ---
 
-## Detailed Theory of the Architecture
+## Design of Architecture
 
 This architecture is designed to combine the strengths of **Graph Neural Networks (GNNs)** and **Transformers**. The idea is to capture both **structural relationships** (from the graph perspective) and **contextual dependencies** (from sequence modeling). The flow of the architecture is as follows:
 
