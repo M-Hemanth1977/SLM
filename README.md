@@ -1,113 +1,85 @@
-# SLM-RAG Pipeline
+# CGT-Bot: GNN-Enhanced Encoder-Decoder for RAG on Fed-Meta-Align
 
-This repository contains a Google Colab notebook **`slm_rag.ipynb`** which demonstrates how to build, run, and experiment with a **Small Language Model (SLM)** integrated with a **Retrieval-Augmented Generation (RAG)** pipeline. 
+## Overview
+This project implements **CGT-Bot**, a custom Graph Neural Network (GNN)-augmented Transformer Encoder-Decoder model designed for Retrieval-Augmented Generation (RAG) tasks. The model is fine-tuned on a PDF document about **Fed-Meta-Align** (a federated TinyML framework for IoT devices) and enriched with Q&A pairs. It leverages **GPT-2 embeddings** for initialization and incorporates a **GNN layer** for capturing local token dependencies in sequences.
 
----
-
-## Project Overview
-
-The **SLM-RAG Complex Pipeline** demonstrates how to integrate a **Small Language Model (SLM)** with a **Retrieval-Augmented Generation (RAG)** framework for efficient information retrieval and generation in a resource-constrained environment like Google Colab.  
-
-The pipeline focuses on reading, preprocessing, embedding, retrieving, and generating text responses from large-scale custom datasets such as technical guides or Wikipedia text.
-
----
-
-### Key Components
-
-1. **Data Access and Integration**
-   - Links Colab to Google Drive for seamless access to large text files (`wiki.train.tokens`, `extracted_text.txt`).
-   - Supports flexible reading strategies (by characters, lines, or paragraphs).
-
-2. **Text Preprocessing**
-   - Uses **NLTK** for:
-     - Sentence tokenization (`sent_tokenize`)
-     - Word tokenization (`word_tokenize`)
-     - Stopword handling
-   - Extracts meaningful text samples from raw files for fine-tuning and retrieval.
-
-3. **Embedding Generation**
-   - Employs **SentenceTransformers (all-MiniLM-L6-v2)** to encode text into dense vector embeddings.
-   - Provides semantic representation of text chunks to enable similarity-based retrieval.
-
-4. **Tokenizer and Model Setup**
-   - Uses **GPT-2 tokenizer** (`GPT2Tokenizer`) for preparing input text.
-   - Sets tokenizer padding token as EOS to handle varying sequence lengths.
-   - Prepares tokenized data for fine-tuning and inference.
-
-5. **Document Chunking**
-   - Splits input text into structured **paragraphs** and **chunks**.
-   - Filters out short or irrelevant segments to keep only meaningful content.
-   - These chunks are later indexed for retrieval in the RAG pipeline.
-
-6. **Fine-Tuning Preparation**
-   - Processes sentences into structured fine-tuning samples.
-   - Ensures that only sufficiently long and clean sentences are included.
-   - Generates training-ready datasets for downstream tasks.
-
-7. **RAG Workflow**
-   - **Retrieval**: Uses vector embeddings (via SentenceTransformers) for similarity search.
-   - **Augmentation**: Retrieves top-k relevant passages from the indexed dataset.
-   - **Generation**: Passes retrieved passages to a Small Language Model for context-grounded text generation. 
+**Key features:**
+- Pretraining on Wikipedia text for general language understanding.
+- Domain adaptation on the Fed-Meta-Align document.
+- Instruction fine-tuning on synthetic Q&A pairs.
+- RAG Integration using SentenceTransformer embeddings for efficient retrieval.
+- Deployment-ready: Independent query processing (no conversation history) with intelligent answer extraction.
+- Achieves low perplexity through multi-stage training and supports edge-device inference (e.g., IoT fault classification).
 
 ---
 
-## Design of Architecture
+## Architecture Details
+**GNNEncoderDecoder hybrid architecture** combining:
+- **Token Embeddings:** GPT-2 initialized (50257 vocab, 768-dim embeddings)
+- **Positional Embeddings:** Learned embeddings for sequence positions (up to 512 tokens)
+- **GNN Module:** Captures local syntactic dependencies
+- **Transformer Encoder:** Global context modeling
+- **Transformer Decoder:** Autoregressive generation with causal masking
+- **Output Projection:** Tied to input embeddings for efficiency
 
-This architecture is designed to combine the strengths of **Graph Neural Networks (GNNs)** and **Transformers**. The idea is to capture both **structural relationships** (from the graph perspective) and **contextual dependencies** (from sequence modeling). The flow of the architecture is as follows:
+**Configuration (CGTConfig)**
 
----
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| vocab_size | 50257 | GPT-2 vocabulary size |
+| hidden_dim | 768 | Embedding and hidden state dimension |
+| gnn_layers | 2 | Number of GNN layers (GATv2Conv) |
+| transformer_encoder_layers | 4 | Encoder Transformer layers |
+| transformer_decoder_layers | 2 | Decoder Transformer layers |
+| num_heads | 8 | Multi-head attention heads |
+| gnn_type | 'gat' | Graph Attention Network (GATv2) |
+| dropout | 0.1 | Dropout rate across layers |
+| max_seq_len | 512 | Maximum input sequence length |
 
-### 1. Input & Initial Embedding Layer
-The raw input features are first converted into dense vector representations. This step ensures that the data is represented in a form suitable for both graph-based and transformer-based processing.
+**Model Layers Breakdown:**
+- **Input Embeddings:** Size `(50257, 768)`, pre-loaded from GPT-2. Adds positional embeddings `(512, 768)`.
+- **GNN Layers:** 2 GATv2 layers with LayerNorm, ReLU, and Dropout. Tokens as nodes; edges include bidirectional chains + skip connections.
+- **Encoder:** 4 layers TransformerEncoderLayer, `d_model=768, nhead=8, dim_feedforward=3072`.
+- **Decoder:** 2 layers TransformerDecoderLayer, causal masking + cross-attention to encoder memory.
+- **Output Layer:** Projects decoder outputs to vocab (50257-dim logits), weight-tying with input embeddings.
 
----
-
-### 2. Graph Neural Network (GNN) Layer
-The embeddings are passed into a GNN, which captures the **local structural information** by allowing each node to learn from its neighbors. This is especially useful when the data has underlying graph relationships, such as dependencies, connections, or interactions between entities.
-
----
-
-### 3. Normalization Layer
-Before moving to the Transformer layers, normalization is applied to stabilize training. It ensures that feature distributions are consistent and prevents issues like exploding or vanishing gradients.
-
----
-
-### 4. Transformer Encoder Layers
-Next, the normalized features are processed through Transformer encoder layers. This stage captures **long-range dependencies and contextual information** across the entire input sequence. Unlike GNNs that focus on local neighborhoods, Transformers are powerful at modeling global relationships.
-
----
-
-### 5. Fusion Layer
-The outputs from the **GNN** and the **Transformer** are then fused together. This step combines the advantages of both:
-- The **GNN** contributes structural, neighborhood-based information.  
-- The **Transformer** contributes contextual and sequential information.  
-
-By fusing them, the model creates a richer representation that balances both perspectives.
-
----
-
-###  6. Re-injection into Transformer
-The fused representation is fed back into an additional Transformer layer. This refinement step allows the model to **re-attend to the combined features** and enhance its understanding by redistributing attention to the most relevant parts of the fused data.
-
----
-
-###  7. Linear Output Layer
-Finally, the refined features are passed through a linear output layer (with softmax for classification or a regression head for numeric predictions). This produces the final model outputs.
+**Parameters Summary:**
+- Total ~88.7M
+  - Embeddings: ~38.5M  
+  - GNN: ~1.2M  
+  - Encoder: ~33.2M  
+  - Decoder: ~16.6M  
+  - Output: tied  
 
 ---
 
-###  Why This Design?
-1. **GNN first** – captures local and relational structure early on.  
-2. **Transformer next** – captures long-range dependencies across the sequence or graph.  
-3. **Fusion step** – integrates graph-based and sequence-based features.  
-4. **Reinjection into Transformer** – refines the fused features by redistributing attention.  
-5. **Linear head** – produces the final predictions in a task-specific manner.  
+## Training Pipeline
+**Stages:**
+1. **Pretraining (Language Modeling)**
+   - Dataset: 10,000 Wikipedia samples
+   - Epochs=3, LR=1e-4, Batch=16
+   - Loss: 3.45 → 2.52
+   - Purpose: Learn English patterns
+
+2. **Domain Fine-Tuning**
+   - Dataset: 276 sentences from Fed-Meta-Align PDF
+   - Epochs=10, LR=5e-5, Batch=8
+   - Loss: 2.89 → 2.12
+   - Purpose: Adapt to technical domain
+
+3. **Instruction Fine-Tuning (Q&A)**
+   - Dataset: 548 samples (276 domain + 272 Q&A)
+   - Epochs=50, LR=3e-5, Batch=8
+   - Loss: 2.34 → 0.64
+   - Purpose: Enable Q&A and instruction-following
 
 ---
 
-### Benefits of the Architecture
-- **Rich feature representations** by combining structural and sequential knowledge.  
-- **Multi-level understanding** with both local and global perspectives.  
-- **Preserves GNN knowledge** by fusing and reinjecting into the Transformer rather than letting it get overshadowed.  
-- **Flexibility** to handle different kinds of inputs (graph-structured, sequential, or hybrid).  
+## RAG System Integration
+- **Retriever:** SentenceTransformer (all-MiniLM-L6-v2) on 142 document chunks
+- **Generation:** Beamless sampling (`temp=0.7, top-k=50, repetition_penalty=1.3`)
+- **Post-Processing:** Intelligent extraction (gibberish detection, sentence filtering)
+- **Fallback:** Extractive QA from top-2 chunks if generative output fails
+
+---
 
